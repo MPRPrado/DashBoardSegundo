@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="page-header">
+  <header class="page-header ranking-header">
     <h1>🏆 Ranking de Grupos</h1>
-    <a class="nav-link" href="admin.html">Área Admin</a>
+    <a class="nav-link admin-link" href="admin.html">🔐 Área Admin</a>
   </header>
 
   <div class="filtros" id="filtros"></div>
@@ -94,10 +94,11 @@
         const pos = i + 1;
         const medalha = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '';
         const posClass = pos <= 3 ? `pos-${pos}` : 'pos-other';
+        const topClass = pos <= 3 ? `ranking-top ranking-top-${pos}` : '';
         return `
-          <section class="ranking-item" data-group-id="${Number(g.id)}">
+          <section class="ranking-item ${topClass}" data-group-id="${Number(g.id)}">
             <div class="ranking-row" onclick="toggleIntegrantes(${Number(g.id)})">
-              <div class="posicao ${posClass}">${medalha || pos + 'º'}</div>
+              <div class="posicao ${posClass}"><span>${medalha || '#' + pos}</span></div>
               <div class="info">
                 <div class="nome">Grupo ${escapeHtml(g.nome)}</div>
                 <div class="turma">Turma ${escapeHtml(g.turma)}</div>

@@ -218,8 +218,10 @@
       const grupos = await fetch(url).then(r => r.json());
       const el = document.getElementById('lista-grupos');
       const posicoesAnteriores = obterPosicoes(el, '.grupo-card');
-      el.innerHTML = grupos.map((g, i) => `
-        <div class="grupo-card" data-group-id="${Number(g.id)}">
+      el.innerHTML = grupos.map((g, i) => {
+        const topClass = i < 3 ? `grupo-top grupo-top-${i + 1}` : '';
+        return `
+        <div class="grupo-card ${topClass}" id="grupo-card-${Number(g.id)}" data-group-id="${Number(g.id)}">
           <div class="rank-number">${i + 1}º</div>
           <div class="grupo-info">
             <div class="nome">Grupo ${escapeHtml(g.nome)}</div>
@@ -232,8 +234,20 @@
             <button class="btn-pts btn-menos50" type="button" onclick="alterar(${Number(g.id)},-50)">-50</button>
             <button class="btn-pts btn-menos100" type="button" onclick="alterar(${Number(g.id)},-100)">-100</button>
           </div>
-        </div>`).join('') || '<div class="empty-state">Nenhum grupo cadastrado.</div>';
+        </div>`;
+      }).join('') || '<div class="empty-state">Nenhum grupo cadastrado.</div>';
       animarLista(el, '.grupo-card', posicoesAnteriores);
+    }
+
+    function mostrarFeedbackPontos(id, valor) {
+      const card = document.getElementById(`grupo-card-${id}`);
+      if (!card) return;
+
+      const feedback = document.createElement('span');
+      feedback.className = `point-pop ${valor > 0 ? 'positivo' : 'negativo'}`;
+      feedback.textContent = `${valor > 0 ? '+' : ''}${valor}`;
+      card.appendChild(feedback);
+      feedback.addEventListener('animationend', () => feedback.remove());
     }
 
     async function alterar(id, val) {
@@ -246,6 +260,7 @@
       if (res.ok) {
         const g = await res.json();
         document.getElementById(`pts-${id}`).textContent = `${Number(g.pontuacao)} pts`;
+        mostrarFeedbackPontos(id, val);
         setTimeout(carregarGrupos, 300);
       }
     }
