@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Ranking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="login-screen" id="tela-login">
+    <div class="login-box">
+      <h2>🔐 Área Administrativa</h2>
+      <input type="password" id="senha-input" placeholder="Senha" onkeydown="if(event.key==='Enter') login()">
+      <button type="button" onclick="login()">Entrar</button>
+      <div class="erro" id="erro-login"></div>
+      <a class="login-back" href="index.html">← Voltar ao Ranking</a>
+    </div>
+  </div>
+
+  <div class="admin-shell" id="tela-admin">
+    <header class="page-header">
+      <h1>⚙️ Painel Admin</h1>
+      <div class="header-actions">
+        <a class="nav-link" href="index.html">Ver Ranking</a>
+        <button class="btn-sec" type="button" onclick="abrirModalSenha()">Alterar Senha</button>
+        <button class="btn-sec" type="button" onclick="logout()">Sair</button>
+      </div>
+    </header>
+
+    <nav class="abas" aria-label="Seções do painel">
+      <div class="aba ativa" onclick="trocarAba('pontuacao', this)">🏆 Pontuação</div>
+      <div class="aba" onclick="trocarAba('equipes', this)">👥 Equipes</div>
+    </nav>
+
+    <section id="aba-pontuacao">
+      <div class="filtros" id="filtros-pts"></div>
+      <div class="container" id="lista-grupos"></div>
+    </section>
+
+    <section id="aba-equipes" style="display:none">
+      <div class="container">
+        <div class="form-novo">
+          <div>
+            <label for="novo-grupo-nome">Nome do grupo</label>
+            <input type="text" id="novo-grupo-nome" placeholder="22**" inputmode="numeric" oninput="limparErroGrupo()">
+          </div>
+          <div>
+            <label for="novo-grupo-turma">Turma</label>
+            <select id="novo-grupo-turma" onchange="atualizarPrefixoGrupo()">
+              <option value="22">22</option>
+              <option value="23">23</option>
+              <option value="24">24</option>
+              <option value="25">25</option>
+            </select>
+          </div>
+          <button class="btn-add" type="button" onclick="criarGrupo()">+ Adicionar Grupo</button>
+          <div class="erro form-error-row" id="erro-grupo"></div>
+        </div>
+
+        <div class="filtros" id="filtros-eq"></div>
+        <div id="lista-equipes"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="modal-senha">
+    <div class="modal">
+      <h3>Alterar Senha</h3>
+      <input type="password" id="nova-senha" placeholder="Nova senha">
+      <div class="erro" id="erro-senha"></div>
+      <div class="modal-btns">
+        <button class="btn-confirmar" type="button" onclick="salvarSenha()">Salvar</button>
+        <button class="btn-cancelar" type="button" onclick="fecharModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let turmaPts = null;
+    let turmaEq = null;
+    let ultimaTurmaGrupo = '22';
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function criarBotaoFiltro(label, turma, ativo, onClick) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.classList.toggle('ativo', ativo);
+      button.addEventListener('click', () => onClick(turma, button));
+      return button;
+    }
+
+    function prepararCampoGrupo() {
+      const input = document.getElementById('novo-grupo-nome');
+      const select = document.getElementById('novo-grupo-turma');
+      ultimaTurmaGrupo = select.value;
+      input.placeholder = `${select.value}**`;
+      if (!input.value.trim()) input.value = select.value;
+    }
+
+    function atualizarPrefixoGrupo() {
+      const input = document.getElementById('novo-grupo-nome');
+      const select = document.getElementById('novo-grupo-turma');
+      const novaTurma = select.value;
+      const valor = input.value.trim();
+      const sufixo = valor.startsWith(ultimaTurmaGrupo) ? valor.slice(ultimaTurmaGrupo.length) : valor.replace(/^(22|23|24|25)/, '');
+
+      input.value = `${novaTurma}${sufixo}`;
+      input.placeholder = `${novaTurma}**`;
+      ultimaTurmaGrupo = novaTurma;
+      input.focus();
+    }
+
+    function limparErroGrupo() {
+      document.getElementById('erro-grupo').textContent = '';
+    }
+
+    function obterPosicoes(container, selector) {
+      return new Map(
+        [...container.querySelectorAll(selector)].map(el => [el.dataset.groupId, el.getBoundingClientRect()])
+      );
+    }
+
+    function animarLista(container, selector, antes) {
+      requestAnimationFrame(() => {
+        container.querySelectorAll(selector).forEach(el => {
+          const rectAnterior = antes.get(el.dataset.groupId);
+          const rectAtual = el.getBoundingClientRect();
+
+          if (!rectAnterior) {
+            el.animate(
+              [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'translateY(0)' }],
+              { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' }
+            );
+            return;
+          }
+
+          const deltaX = rectAnterior.left - rectAtual.left;
+          const deltaY = rectAnterior.top - rectAtual.top;
+          if (!deltaX && !deltaY) return;
+
+          el.animate(
+            [
+              { transform: `translate(${deltaX}px, ${deltaY}px)` },
+              { transform: 'translate(0, 0)' }
+            ],
+            { duration: 430, easing: 'cubic-bezier(.2,.8,.2,1)' }
+          );
+        });
+      });
+    }
+
+    async function login() {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senha: document.getElementById('senha-input').value })
+      });
+
+      if (res.ok) {
+        mostrarPainel();
+      } else {
+        document.getElementById('erro-login').textContent = 'Senha incorreta.';
+      }
+    }
+
+    async function logout() {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      location.reload();
+    }
+
+    async function verificarSessao() {
+      const res = await fetch('/api/admin/status');
+      if ((await res.json()).logado) mostrarPainel();
+    }
+
+    function mostrarPainel() {
+      document.getElementById('tela-login').style.display = 'none';
+      document.getElementById('tela-admin').style.display = 'block';
+      carregarFiltros();
+    }
+
+    function trocarAba(aba, el) {
+      document.querySelectorAll('.aba').forEach(a => a.classList.remove('ativa'));
+      el.classList.add('ativa');
+      document.getElementById('aba-pontuacao').style.display = aba === 'pontuacao' ? 'block' : 'none';
+      document.getElementById('aba-equipes').style.display = aba === 'equipes' ? 'block' : 'none';
+      if (aba === 'equipes') carregarEquipes();
+    }
+
+    async function carregarFiltros() {
+      const turmas = await fetch('/api/turmas').then(r => r.json());
+
+      const render = (elId, selecionada, handler) => {
+        const el = document.getElementById(elId);
+        el.replaceChildren(criarBotaoFiltro('Todas', null, selecionada === null, handler));
+        turmas.forEach(turma => {
+          el.appendChild(criarBotaoFiltro(`Turma ${turma}`, turma, selecionada === turma, handler));
+        });
+      };
+
+      render('filtros-pts', turmaPts, filtrarPts);
+      render('filtros-eq', turmaEq, filtrarEq);
+      carregarGrupos();
+    }
+
+    async function carregarGrupos() {
+      const url = turmaPts ? `/api/ranking?turma=${encodeURIComponent(turmaPts)}` : '/api/ranking';
+      const grupos = await fetch(url).then(r => r.json());
+      const el = document.getElementById('lista-grupos');
+      const posicoesAnteriores = obterPosicoes(el, '.grupo-card');
+      el.innerHTML = grupos.map((g, i) => `
+        <div class="grupo-card" data-group-id="${Number(g.id)}">
+          <div class="rank-number">${i + 1}º</div>
+          <div class="grupo-info">
+            <div class="nome">Grupo ${escapeHtml(g.nome)}</div>
+            <div class="turma">Turma ${escapeHtml(g.turma)}</div>
+          </div>
+          <div class="pontuacao" id="pts-${Number(g.id)}">${Number(g.pontuacao)} pts</div>
+          <div class="botoes">
+            <button class="btn-pts btn-mais100" type="button" onclick="alterar(${Number(g.id)},100)">+100</button>
+            <button class="btn-pts btn-mais50" type="button" onclick="alterar(${Number(g.id)},50)">+50</button>
+            <button class="btn-pts btn-menos50" type="button" onclick="alterar(${Number(g.id)},-50)">-50</button>
+            <button class="btn-pts btn-menos100" type="button" onclick="alterar(${Number(g.id)},-100)">-100</button>
+          </div>
+        </div>`).join('') || '<div class="empty-state">Nenhum grupo cadastrado.</div>';
+      animarLista(el, '.grupo-card', posicoesAnteriores);
+    }
+
+    async function alterar(id, val) {
+      const res = await fetch('/api/admin/pontuacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grupo_id: id, alteracao: val })
+      });
+
+      if (res.ok) {
+        const g = await res.json();
+        document.getElementById(`pts-${id}`).textContent = `${Number(g.pontuacao)} pts`;
+        setTimeout(carregarGrupos, 300);
+      }
+    }
+
+    function filtrarPts(turma, btn) {
+      turmaPts = turma;
+      document.querySelectorAll('#filtros-pts button').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      carregarGrupos();
+    }
+
+    async function carregarEquipes() {
+      const url = turmaEq ? `/api/ranking?turma=${encodeURIComponent(turmaEq)}` : '/api/ranking';
+      const grupos = await fetch(url).then(r => r.json());
+      const el = document.getElementById('lista-equipes');
+      const posicoesAnteriores = obterPosicoes(el, '.equipe-card');
+      el.innerHTML = grupos.map(g => `
+        <section class="equipe-card" id="eq-${Number(g.id)}" data-group-id="${Number(g.id)}">
+          <div class="equipe-header" onclick="toggleIntegrantes(${Number(g.id)})">
+            <div>
+              <div class="eq-nome">Grupo ${escapeHtml(g.nome)}</div>
+              <div class="eq-meta">Turma ${escapeHtml(g.turma)} · ${Number(g.pontuacao)} pts</div>
+            </div>
+            <div class="eq-right">
+              <button class="btn-del" type="button" onclick="event.stopPropagation(); deletarGrupo(${Number(g.id)})">Excluir</button>
+              <span class="chevron" id="chev-${Number(g.id)}">▼</span>
+            </div>
+          </div>
+          <div class="integrantes-panel" id="panel-${Number(g.id)}">
+            <div class="form-integrante">
+              <input type="text" id="int-input-${Number(g.id)}" placeholder="Nome do integrante" onkeydown="if(event.key==='Enter') adicionarIntegrante(${Number(g.id)})">
+              <button class="btn-add" type="button" onclick="adicionarIntegrante(${Number(g.id)})">+ Add</button>
+            </div>
+            <div id="int-lista-${Number(g.id)}"></div>
+          </div>
+        </section>`).join('') || '<div class="empty-state">Nenhum grupo cadastrado.</div>';
+      animarLista(el, '.equipe-card', posicoesAnteriores);
+    }
+
+    function filtrarEq(turma, btn) {
+      turmaEq = turma;
+      document.querySelectorAll('#filtros-eq button').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      carregarEquipes();
+    }
+
+    async function toggleIntegrantes(id) {
+      const panel = document.getElementById(`panel-${id}`);
+      const chev = document.getElementById(`chev-${id}`);
+      const aberto = panel.classList.toggle('aberto');
+      chev.classList.toggle('aberto', aberto);
+      if (aberto) await renderIntegrantes(id);
+    }
+
+    async function renderIntegrantes(grupoId) {
+      const lista = await fetch(`/api/grupos/${grupoId}/integrantes`).then(r => r.json());
+      const el = document.getElementById(`int-lista-${grupoId}`);
+      el.innerHTML = lista.length
+        ? lista.map(i => `
+            <div class="integrante-item">
+              <span>👤 ${escapeHtml(i.nome)}</span>
+              <button class="btn-del-int" type="button" onclick="deletarIntegrante(${Number(i.id)}, ${Number(grupoId)})" title="Remover">✕</button>
+            </div>`).join('')
+        : '<div class="sem-integrantes">Nenhum integrante cadastrado.</div>';
+    }
+
+    async function adicionarIntegrante(grupoId) {
+      const input = document.getElementById(`int-input-${grupoId}`);
+      const nome = input.value.trim();
+      if (!nome) return;
+
+      await fetch('/api/admin/integrantes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grupo_id: grupoId, nome })
+      });
+      input.value = '';
+      renderIntegrantes(grupoId);
+    }
+
+    async function deletarIntegrante(id, grupoId) {
+      await fetch(`/api/admin/integrantes/${id}`, { method: 'DELETE' });
+      renderIntegrantes(grupoId);
+    }
+
+    async function criarGrupo() {
+      const nome = document.getElementById('novo-grupo-nome').value.trim();
+      const turma = document.getElementById('novo-grupo-turma').value;
+      const erroEl = document.getElementById('erro-grupo');
+
+      if (!nome || nome.length <= turma.length) {
+        erroEl.textContent = 'Complete o número do grupo.';
+        return;
+      }
+
+      if (!nome.startsWith(turma)) {
+        erroEl.textContent = `O grupo precisa começar com ${turma}.`;
+        return;
+      }
+
+      erroEl.textContent = '';
+      const res = await fetch('/api/admin/grupos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, turma })
+      });
+
+      if (!res.ok) {
+        erroEl.textContent = (await res.json()).erro || 'Não foi possível criar o grupo.';
+        return;
+      }
+
+      document.getElementById('novo-grupo-nome').value = turma;
+      carregarEquipes();
+      carregarFiltros();
+    }
+
+    async function deletarGrupo(id) {
+      if (!confirm('Excluir este grupo e todos os seus integrantes?')) return;
+      await fetch(`/api/admin/grupos/${id}`, { method: 'DELETE' });
+      carregarEquipes();
+      carregarFiltros();
+    }
+
+    function abrirModalSenha() {
+      document.getElementById('modal-senha').classList.add('aberto');
+      document.getElementById('nova-senha').value = '';
+      document.getElementById('erro-senha').textContent = '';
+    }
+
+    function fecharModal() {
+      document.getElementById('modal-senha').classList.remove('aberto');
+    }
+
+    async function salvarSenha() {
+      const res = await fetch('/api/admin/senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nova_senha: document.getElementById('nova-senha').value })
+      });
+
+      if (res.ok) {
+        fecharModal();
+      } else {
+        document.getElementById('erro-senha').textContent = (await res.json()).erro;
+      }
+    }
+
+    prepararCampoGrupo();
+    verificarSessao();
+  </script>
+</body>
+</html>

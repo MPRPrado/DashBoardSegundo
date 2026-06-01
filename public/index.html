@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ranking de Grupos</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>🏆 Ranking de Grupos</h1>
+    <a class="nav-link" href="admin.html">Área Admin</a>
+  </header>
+
+  <div class="filtros" id="filtros"></div>
+  <main class="container" id="ranking"></main>
+
+  <script>
+    let turmaSelecionada = null;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function criarBotaoFiltro(label, turma) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.classList.toggle('ativo', turmaSelecionada === turma);
+      button.addEventListener('click', () => filtrar(turma, button));
+      return button;
+    }
+
+    function obterPosicoes(container, selector) {
+      return new Map(
+        [...container.querySelectorAll(selector)].map(el => [el.dataset.groupId, el.getBoundingClientRect()])
+      );
+    }
+
+    function animarLista(container, selector, antes) {
+      requestAnimationFrame(() => {
+        container.querySelectorAll(selector).forEach(el => {
+          const rectAnterior = antes.get(el.dataset.groupId);
+          const rectAtual = el.getBoundingClientRect();
+
+          if (!rectAnterior) {
+            el.animate(
+              [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'translateY(0)' }],
+              { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' }
+            );
+            return;
+          }
+
+          const deltaX = rectAnterior.left - rectAtual.left;
+          const deltaY = rectAnterior.top - rectAtual.top;
+          if (!deltaX && !deltaY) return;
+
+          el.animate(
+            [
+              { transform: `translate(${deltaX}px, ${deltaY}px)` },
+              { transform: 'translate(0, 0)' }
+            ],
+            { duration: 430, easing: 'cubic-bezier(.2,.8,.2,1)' }
+          );
+        });
+      });
+    }
+
+    async function carregarTurmas() {
+      const turmas = await fetch('/api/turmas').then(r => r.json());
+      const filtros = document.getElementById('filtros');
+      filtros.replaceChildren(criarBotaoFiltro('Todas', null));
+      turmas.forEach(turma => filtros.appendChild(criarBotaoFiltro(`Turma ${turma}`, turma)));
+    }
+
+    async function carregarRanking() {
+      const url = turmaSelecionada ? `/api/ranking?turma=${encodeURIComponent(turmaSelecionada)}` : '/api/ranking';
+      const grupos = await fetch(url).then(r => r.json());
+      const el = document.getElementById('ranking');
+      const posicoesAnteriores = obterPosicoes(el, '.ranking-item');
+
+      if (!grupos.length) {
+        el.innerHTML = '<div class="vazio">Nenhum grupo encontrado.</div>';
+        return;
+      }
+
+      el.innerHTML = grupos.map((g, i) => {
+        const pos = i + 1;
+        const medalha = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : '';
+        const posClass = pos <= 3 ? `pos-${pos}` : 'pos-other';
+        return `
+          <section class="ranking-item" data-group-id="${Number(g.id)}">
+            <div class="ranking-row" onclick="toggleIntegrantes(${Number(g.id)})">
+              <div class="posicao ${posClass}">${medalha || pos + 'º'}</div>
+              <div class="info">
+                <div class="nome">Grupo ${escapeHtml(g.nome)}</div>
+                <div class="turma">Turma ${escapeHtml(g.turma)}</div>
+              </div>
+              <div class="pontuacao">${Number(g.pontuacao)} pts</div>
+              <span class="chevron" id="chev-${Number(g.id)}">▼</span>
+            </div>
+            <div class="integrantes-panel" id="panel-${Number(g.id)}"></div>
+          </section>`;
+      }).join('');
+      animarLista(el, '.ranking-item', posicoesAnteriores);
+    }
+
+    async function toggleIntegrantes(id) {
+      const panel = document.getElementById(`panel-${id}`);
+      const chev = document.getElementById(`chev-${id}`);
+      const aberto = panel.classList.toggle('aberto');
+      chev.classList.toggle('aberto', aberto);
+
+      if (aberto && !panel.dataset.loaded) {
+        const lista = await fetch(`/api/grupos/${id}/integrantes`).then(r => r.json());
+        panel.innerHTML = lista.length
+          ? lista.map(i => `<div class="integrante">👤 ${escapeHtml(i.nome)}</div>`).join('')
+          : '<div class="sem-int">Nenhum integrante cadastrado.</div>';
+        panel.dataset.loaded = '1';
+      }
+    }
+
+    function filtrar(turma, btn) {
+      turmaSelecionada = turma;
+      document.querySelectorAll('.filtros button').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      carregarRanking();
+    }
+
+    carregarTurmas();
+    carregarRanking();
+    setInterval(carregarRanking, 5000);
+  </script>
+</body>
+</html>
