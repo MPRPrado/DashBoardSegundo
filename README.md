@@ -9,7 +9,7 @@ Sistema local para gerenciar e exibir um ranking de grupos por turma.
 - Painel administrativo com login.
 - Cadastro e exclusão de grupos.
 - Cadastro e exclusão de integrantes.
-- Alteração de pontuação com botões `+100`, `+50`, `-50` e `-100`.
+- Alteração de pontuação com botões `+100`, `+50`,`+10`, `-10`, `-50` e `-100`.
 - Pontuação mínima travada em `0`.
 - Bloqueio de grupos duplicados na mesma turma.
 - Acesso pelo celular na mesma rede do computador.
