@@ -14,6 +14,7 @@ const HOST = '0.0.0.0';
 const HASH_ITERATIONS = 120000;
 const HASH_KEYLEN = 32;
 const HASH_DIGEST = 'sha256';
+const RANKING_ORDER = 'pontuacao DESC, ordem_ranking ASC, nome ASC, id ASC';
 
 let db;
 
@@ -30,7 +31,8 @@ async function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL,
       turma TEXT NOT NULL,
-      pontuacao INTEGER DEFAULT 0
+      pontuacao INTEGER DEFAULT 0,
+      ordem_ranking INTEGER
     );
     CREATE TABLE IF NOT EXISTS integrantes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,6 +52,8 @@ async function initDB() {
     );
   `);
 
+  ensureRankingOrderColumn();
+  normalizeRankingOrder(getCurrentRankingPositions());
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_grupos_nome_turma ON grupos(nome, turma)');
 
   const admin = queryOne('SELECT senha FROM admin WHERE id = 1');
@@ -109,6 +113,39 @@ function queryOne(sql, params = []) {
   return queryAll(sql, params)[0] || null;
 }
 
+function hasColumn(tableName, columnName) {
+  return queryAll(`PRAGMA table_info(${tableName})`).some(column => column.name === columnName);
+}
+
+function ensureRankingOrderColumn() {
+  if (!hasColumn('grupos', 'ordem_ranking')) {
+    db.run('ALTER TABLE grupos ADD COLUMN ordem_ranking INTEGER');
+  }
+}
+
+function getCurrentRankingPositions() {
+  const grupos = queryAll(`SELECT id FROM grupos ORDER BY ${RANKING_ORDER}`);
+  return new Map(grupos.map((grupo, index) => [grupo.id, index]));
+}
+
+function normalizeRankingOrder(previousPositions = new Map()) {
+  const grupos = queryAll('SELECT id, pontuacao FROM grupos');
+  grupos.sort((a, b) => {
+    const scoreDiff = Number(b.pontuacao) - Number(a.pontuacao);
+    if (scoreDiff) return scoreDiff;
+
+    const previousA = previousPositions.has(a.id) ? previousPositions.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const previousB = previousPositions.has(b.id) ? previousPositions.get(b.id) : Number.MAX_SAFE_INTEGER;
+    if (previousA !== previousB) return previousA - previousB;
+
+    return Number(a.id) - Number(b.id);
+  });
+
+  grupos.forEach((grupo, index) => {
+    db.run('UPDATE grupos SET ordem_ranking = ? WHERE id = ?', [index + 1, grupo.id]);
+  });
+}
+
 function getNetworkUrls() {
   return Object.values(os.networkInterfaces())
     .flat()
@@ -132,8 +169,8 @@ app.get('/api/turmas', (req, res) => {
 app.get('/api/ranking', (req, res) => {
   const { turma } = req.query;
   const grupos = turma
-    ? queryAll('SELECT * FROM grupos WHERE turma = ? ORDER BY pontuacao DESC, nome ASC', [turma])
-    : queryAll('SELECT * FROM grupos ORDER BY pontuacao DESC, nome ASC');
+    ? queryAll(`SELECT * FROM grupos WHERE turma = ? ORDER BY ${RANKING_ORDER}`, [turma])
+    : queryAll(`SELECT * FROM grupos ORDER BY ${RANKING_ORDER}`);
 
   res.json(grupos);
 });
@@ -175,7 +212,7 @@ function requireAdmin(req, res, next) {
 
 app.post('/api/admin/pontuacao', requireAdmin, (req, res) => {
   const { grupo_id, alteracao } = req.body;
-  if (![100, 50, -50, -100].includes(alteracao)) {
+  if (![100, 50, 10, -10, -50, -100].includes(alteracao)) {
     return res.status(400).json({ erro: 'Alteração inválida' });
   }
 
@@ -183,8 +220,10 @@ app.post('/api/admin/pontuacao', requireAdmin, (req, res) => {
     return res.status(404).json({ erro: 'Grupo não encontrado' });
   }
 
+  const previousPositions = getCurrentRankingPositions();
   db.run('UPDATE grupos SET pontuacao = max(pontuacao + ?, 0) WHERE id = ?', [alteracao, grupo_id]);
   db.run('INSERT INTO historico (grupo_id, alteracao) VALUES (?, ?)', [grupo_id, alteracao]);
+  normalizeRankingOrder(previousPositions);
   saveDB();
 
   res.json(queryOne('SELECT * FROM grupos WHERE id = ?', [grupo_id]));
@@ -218,7 +257,11 @@ app.post('/api/admin/grupos', requireAdmin, (req, res) => {
     return res.status(409).json({ erro: 'Este grupo já existe nessa turma' });
   }
 
-  db.run('INSERT INTO grupos (nome, turma, pontuacao) VALUES (?, ?, 0)', [nomeNormalizado, turmaNormalizada]);
+  const proximaOrdem = queryOne('SELECT COALESCE(MAX(ordem_ranking), 0) + 1 AS ordem FROM grupos').ordem;
+  db.run(
+    'INSERT INTO grupos (nome, turma, pontuacao, ordem_ranking) VALUES (?, ?, 0, ?)',
+    [nomeNormalizado, turmaNormalizada, proximaOrdem]
+  );
   saveDB();
   res.json(queryOne('SELECT * FROM grupos WHERE rowid = last_insert_rowid()'));
 });

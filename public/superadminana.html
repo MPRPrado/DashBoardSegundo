@@ -21,7 +21,7 @@
     <header class="page-header">
       <h1>⚙️ Painel Admin</h1>
       <div class="header-actions">
-        <a class="nav-link" href="index.html">Ver Ranking</a>
+        <a class="nav-link" href="/">Ver Ranking</a>
         <button class="btn-sec" type="button" onclick="abrirModalSenha()">Alterar Senha</button>
         <button class="btn-sec" type="button" onclick="logout()">Sair</button>
       </div>
@@ -231,6 +231,8 @@
           <div class="botoes">
             <button class="btn-pts btn-mais100" type="button" onclick="alterar(${Number(g.id)},100)">+100</button>
             <button class="btn-pts btn-mais50" type="button" onclick="alterar(${Number(g.id)},50)">+50</button>
+            <button class="btn-pts btn-mais10" type="button" onclick="alterar(${Number(g.id)},10)">+10</button>
+            <button class="btn-pts btn-menos10" type="button" onclick="alterar(${Number(g.id)},-10)">-10</button>
             <button class="btn-pts btn-menos50" type="button" onclick="alterar(${Number(g.id)},-50)">-50</button>
             <button class="btn-pts btn-menos100" type="button" onclick="alterar(${Number(g.id)},-100)">-100</button>
           </div>
