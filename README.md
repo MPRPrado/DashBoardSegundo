@@ -4,19 +4,19 @@ Sistema local para gerenciar e exibir um ranking de grupos por turma.
 
 ## Funcionalidades
 
-- Ranking público com destaque para o TOP 3.
+- Ranking publico com destaque para o TOP 3.
 - Filtro por turma.
 - Painel administrativo com login.
-- Cadastro e exclusão de grupos.
-- Cadastro e exclusão de integrantes.
-- Alteração de pontuação com botões `+100`, `+50`, `-50` e `-100`.
-- Pontuação mínima travada em `0`.
+- Cadastro e exclusao de grupos.
+- Alteracao de pontuacao com botoes `+100`, `+50`, `+10`, `-10`, `-50` e `-100`.
+- Pontuacao minima travada em `0`.
 - Bloqueio de grupos duplicados na mesma turma.
+- Desempate mantendo na frente quem ja estava na frente antes.
 - Acesso pelo celular na mesma rede do computador.
 
 ## Como Rodar
 
-Instale as dependências:
+Instale as dependencias:
 
 ```powershell
 npm install
@@ -34,63 +34,68 @@ Abra no navegador:
 http://localhost:3000
 ```
 
-## Acesso Pelo Celular
+## Area Admin
 
-Ao iniciar o servidor, o terminal mostra endereços parecidos com:
-
-```txt
-Celular na mesma rede: http://10.0.0.40:3000
-```
-
-Abra esse endereço no navegador do celular. O celular precisa estar na mesma rede do computador.
-
-Se não abrir, verifique se o Firewall do Windows permitiu o Node.js na rede privada.
-
-## Área Admin
-
-Acesse:
+Acesse diretamente pela URL:
 
 ```txt
-http://localhost:3000/admin.html
+http://localhost:3000/superadminana.html
 ```
 
-Senha inicial em um banco novo:
+Senha inicial quando `data/admin.txt` nao existe:
 
 ```txt
 admin123
 ```
 
-Depois de entrar, use a opção **Alterar Senha**. A senha é salva com hash no banco.
+Depois de entrar, use a opcao **Alterar Senha**. A senha e salva com hash em `data/admin.txt`.
 
-## Banco de Dados
+## Arquivos de Dados
 
-O banco fica no arquivo:
+O projeto nao usa mais SQLite. Os dados ficam em arquivos `.txt`:
 
 ```txt
-ranking.db
+data/admin.txt
+data/ranking.txt
 ```
 
-Tudo que for criado pelo computador ou pelo celular é salvo nesse arquivo local, porque o celular acessa o servidor rodando no computador.
+`data/admin.txt` guarda a senha do painel administrativo.
 
-Como o `ranking.db` está versionado no Git, quem clonar o repositório recebe os dados que estavam no banco no momento do último commit. Mudanças feitas depois só vão para outras pessoas se você commitar e der push no `ranking.db` atualizado.
+`data/ranking.txt` guarda grupos, turmas, pontuacao e ordem do ranking.
 
-## Variáveis Opcionais
+Esses arquivos ficam fora da pasta `public`, entao nao sao servidos como arquivos estaticos pelo navegador.
 
-Você pode mudar a porta:
+Tudo que for criado pelo computador ou pelo celular e salvo nesses arquivos locais, porque o celular acessa o servidor rodando no computador.
+
+## Acesso Pelo Celular
+
+Ao iniciar o servidor, o terminal mostra enderecos parecidos com:
+
+```txt
+Celular na mesma rede: http://10.0.0.40:3000
+```
+
+Abra esse endereco no navegador do celular. O celular precisa estar na mesma rede do computador.
+
+Se nao abrir, verifique se o Firewall do Windows permitiu o Node.js na rede privada.
+
+## Variaveis Opcionais
+
+Voce pode mudar a porta:
 
 ```powershell
 $env:PORT="3001"
 npm start
 ```
 
-Você pode definir uma senha inicial para um banco novo:
+Voce pode definir uma senha inicial quando `data/admin.txt` ainda nao existe:
 
 ```powershell
 $env:ADMIN_INITIAL_PASSWORD="suaSenha"
 npm start
 ```
 
-Você também pode definir o segredo da sessão:
+Voce tambem pode definir o segredo da sessao:
 
 ```powershell
 $env:SESSION_SECRET="um-segredo-local"
@@ -100,18 +105,21 @@ npm start
 ## Estrutura
 
 ```txt
+data/
+  admin.txt
+  ranking.txt
 public/
-  admin.html
   index.html
+  superadminana.html
   styles.css
 server.js
-ranking.db
 package.json
 ```
 
-## Observações
+## Observacoes
 
-- O projeto foi pensado para uso local.
-- `node_modules/` não deve ser enviado para o GitHub.
-- `server.log` não deve ser enviado para o GitHub.
-- Para parar o servidor, pressione `Ctrl + C` no terminal onde o `npm start` está rodando.
+- O projeto foi pensado para uso local ou servidor simples com Node.js.
+- `node_modules/` nao deve ser enviado para o GitHub.
+- `server.log` nao deve ser enviado para o GitHub.
+- `ranking.db` nao e mais usado.
+- Para parar o servidor, pressione `Ctrl + C` no terminal onde o `npm start` esta rodando.

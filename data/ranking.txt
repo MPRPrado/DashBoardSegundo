@@ -1,0 +1,47 @@
+{
+  "nextId": 7,
+  "grupos": [
+    {
+      "id": 1,
+      "nome": "2201",
+      "turma": "22",
+      "pontuacao": 200,
+      "ordem_ranking": 1
+    },
+    {
+      "id": 2,
+      "nome": "2301",
+      "turma": "23",
+      "pontuacao": 0,
+      "ordem_ranking": 2
+    },
+    {
+      "id": 5,
+      "nome": "2202",
+      "turma": "22",
+      "pontuacao": 0,
+      "ordem_ranking": 3
+    },
+    {
+      "id": 3,
+      "nome": "2401",
+      "turma": "24",
+      "pontuacao": 0,
+      "ordem_ranking": 4
+    },
+    {
+      "id": 6,
+      "nome": "2203",
+      "turma": "22",
+      "pontuacao": 0,
+      "ordem_ranking": 5
+    },
+    {
+      "id": 4,
+      "nome": "2501",
+      "turma": "25",
+      "pontuacao": 0,
+      "ordem_ranking": 6
+    }
+  ]
+}

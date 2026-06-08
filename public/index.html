@@ -96,34 +96,17 @@
         const topClass = pos <= 3 ? `ranking-top ranking-top-${pos}` : '';
         return `
           <section class="ranking-item ${topClass}" data-group-id="${Number(g.id)}">
-            <div class="ranking-row" onclick="toggleIntegrantes(${Number(g.id)})">
+            <div class="ranking-row">
               <div class="posicao ${posClass}"><span>${medalha || '#' + pos}</span></div>
               <div class="info">
                 <div class="nome">Grupo ${escapeHtml(g.nome)}</div>
                 <div class="turma">Turma ${escapeHtml(g.turma)}</div>
               </div>
               <div class="pontuacao">${Number(g.pontuacao)} pts</div>
-              <span class="chevron" id="chev-${Number(g.id)}">▼</span>
             </div>
-            <div class="integrantes-panel" id="panel-${Number(g.id)}"></div>
           </section>`;
       }).join('');
       animarLista(el, '.ranking-item', posicoesAnteriores);
-    }
-
-    async function toggleIntegrantes(id) {
-      const panel = document.getElementById(`panel-${id}`);
-      const chev = document.getElementById(`chev-${id}`);
-      const aberto = panel.classList.toggle('aberto');
-      chev.classList.toggle('aberto', aberto);
-
-      if (aberto && !panel.dataset.loaded) {
-        const lista = await fetch(`/api/grupos/${id}/integrantes`).then(r => r.json());
-        panel.innerHTML = lista.length
-          ? lista.map(i => `<div class="integrante">👤 ${escapeHtml(i.nome)}</div>`).join('')
-          : '<div class="sem-int">Nenhum integrante cadastrado.</div>';
-        panel.dataset.loaded = '1';
-      }
     }
 
     function filtrar(turma, btn) {

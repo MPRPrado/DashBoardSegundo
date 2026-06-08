@@ -281,22 +281,14 @@
       const posicoesAnteriores = obterPosicoes(el, '.equipe-card');
       el.innerHTML = grupos.map(g => `
         <section class="equipe-card" id="eq-${Number(g.id)}" data-group-id="${Number(g.id)}">
-          <div class="equipe-header" onclick="toggleIntegrantes(${Number(g.id)})">
+          <div class="equipe-header">
             <div>
               <div class="eq-nome">Grupo ${escapeHtml(g.nome)}</div>
               <div class="eq-meta">Turma ${escapeHtml(g.turma)} · ${Number(g.pontuacao)} pts</div>
             </div>
             <div class="eq-right">
               <button class="btn-del" type="button" onclick="event.stopPropagation(); deletarGrupo(${Number(g.id)})">Excluir</button>
-              <span class="chevron" id="chev-${Number(g.id)}">▼</span>
             </div>
-          </div>
-          <div class="integrantes-panel" id="panel-${Number(g.id)}">
-            <div class="form-integrante">
-              <input type="text" id="int-input-${Number(g.id)}" placeholder="Nome do integrante" onkeydown="if(event.key==='Enter') adicionarIntegrante(${Number(g.id)})">
-              <button class="btn-add" type="button" onclick="adicionarIntegrante(${Number(g.id)})">+ Add</button>
-            </div>
-            <div id="int-lista-${Number(g.id)}"></div>
           </div>
         </section>`).join('') || '<div class="empty-state">Nenhum grupo cadastrado.</div>';
       animarLista(el, '.equipe-card', posicoesAnteriores);
@@ -307,45 +299,6 @@
       document.querySelectorAll('#filtros-eq button').forEach(b => b.classList.remove('ativo'));
       btn.classList.add('ativo');
       carregarEquipes();
-    }
-
-    async function toggleIntegrantes(id) {
-      const panel = document.getElementById(`panel-${id}`);
-      const chev = document.getElementById(`chev-${id}`);
-      const aberto = panel.classList.toggle('aberto');
-      chev.classList.toggle('aberto', aberto);
-      if (aberto) await renderIntegrantes(id);
-    }
-
-    async function renderIntegrantes(grupoId) {
-      const lista = await fetch(`/api/grupos/${grupoId}/integrantes`).then(r => r.json());
-      const el = document.getElementById(`int-lista-${grupoId}`);
-      el.innerHTML = lista.length
-        ? lista.map(i => `
-            <div class="integrante-item">
-              <span>👤 ${escapeHtml(i.nome)}</span>
-              <button class="btn-del-int" type="button" onclick="deletarIntegrante(${Number(i.id)}, ${Number(grupoId)})" title="Remover">✕</button>
-            </div>`).join('')
-        : '<div class="sem-integrantes">Nenhum integrante cadastrado.</div>';
-    }
-
-    async function adicionarIntegrante(grupoId) {
-      const input = document.getElementById(`int-input-${grupoId}`);
-      const nome = input.value.trim();
-      if (!nome) return;
-
-      await fetch('/api/admin/integrantes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grupo_id: grupoId, nome })
-      });
-      input.value = '';
-      renderIntegrantes(grupoId);
-    }
-
-    async function deletarIntegrante(id, grupoId) {
-      await fetch(`/api/admin/integrantes/${id}`, { method: 'DELETE' });
-      renderIntegrantes(grupoId);
     }
 
     async function criarGrupo() {
@@ -381,7 +334,7 @@
     }
 
     async function deletarGrupo(id) {
-      if (!confirm('Excluir este grupo e todos os seus integrantes?')) return;
+      if (!confirm('Excluir este grupo?')) return;
       await fetch(`/api/admin/grupos/${id}`, { method: 'DELETE' });
       carregarEquipes();
       carregarFiltros();

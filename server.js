@@ -1,75 +1,38 @@
 const express = require('express');
 const session = require('express-session');
-const initSqlJs = require('sql.js');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const app = express();
-const DB_PATH = path.join(__dirname, 'ranking.db');
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DATA_DIR = path.join(__dirname, 'data');
+const ADMIN_PATH = path.join(DATA_DIR, 'admin.txt');
+const RANKING_PATH = path.join(DATA_DIR, 'ranking.txt');
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 const HASH_ITERATIONS = 120000;
 const HASH_KEYLEN = 32;
 const HASH_DIGEST = 'sha256';
-const RANKING_ORDER = 'pontuacao DESC, ordem_ranking ASC, nome ASC, id ASC';
 
-let db;
+let adminData;
+let rankingData;
 
-async function initDB() {
-  const SQL = await initSqlJs();
-  db = fs.existsSync(DB_PATH)
-    ? new SQL.Database(fs.readFileSync(DB_PATH))
-    : new SQL.Database();
+function readJsonFile(filePath, fallback) {
+  if (!fs.existsSync(filePath)) return fallback;
 
-  db.run('PRAGMA foreign_keys = ON');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS grupos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      turma TEXT NOT NULL,
-      pontuacao INTEGER DEFAULT 0,
-      ordem_ranking INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS integrantes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      grupo_id INTEGER NOT NULL,
-      nome TEXT NOT NULL,
-      FOREIGN KEY (grupo_id) REFERENCES grupos(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS admin (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      senha TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS historico (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      grupo_id INTEGER,
-      alteracao INTEGER,
-      criado_em TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
-  ensureRankingOrderColumn();
-  normalizeRankingOrder(getCurrentRankingPositions());
-  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_grupos_nome_turma ON grupos(nome, turma)');
-
-  const admin = queryOne('SELECT senha FROM admin WHERE id = 1');
-  if (!admin) {
-    db.run('INSERT INTO admin (id, senha) VALUES (1, ?)', [
-      hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin123')
-    ]);
-  } else if (!isHashedPassword(admin.senha)) {
-    db.run('UPDATE admin SET senha = ? WHERE id = 1', [hashPassword(admin.senha)]);
+  try {
+    const content = fs.readFileSync(filePath, 'utf8').trim();
+    return content ? JSON.parse(content) : fallback;
+  } catch (error) {
+    console.error(`Erro ao ler ${path.basename(filePath)}:`, error.message);
+    return fallback;
   }
-
-  saveDB();
 }
 
-function saveDB() {
-  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+function writeJsonFile(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 function hashPassword(password) {
@@ -101,36 +64,59 @@ function verifyPassword(password, storedPassword) {
   return storedBuffer.length === hash.length && crypto.timingSafeEqual(storedBuffer, hash);
 }
 
-function queryAll(sql, params = []) {
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-
-  const { columns, values } = result[0];
-  return values.map(row => Object.fromEntries(columns.map((col, i) => [col, row[i]])));
+function getDefaultRankingData() {
+  return {
+    nextId: 5,
+    grupos: [
+      { id: 1, nome: '2201', turma: '22', pontuacao: 0, ordem_ranking: 1 },
+      { id: 2, nome: '2301', turma: '23', pontuacao: 0, ordem_ranking: 2 },
+      { id: 3, nome: '2401', turma: '24', pontuacao: 0, ordem_ranking: 3 },
+      { id: 4, nome: '2501', turma: '25', pontuacao: 0, ordem_ranking: 4 }
+    ]
+  };
 }
 
-function queryOne(sql, params = []) {
-  return queryAll(sql, params)[0] || null;
-}
+function initDataFiles() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 
-function hasColumn(tableName, columnName) {
-  return queryAll(`PRAGMA table_info(${tableName})`).some(column => column.name === columnName);
-}
+  adminData = readJsonFile(ADMIN_PATH, {
+    senha: hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin123')
+  });
 
-function ensureRankingOrderColumn() {
-  if (!hasColumn('grupos', 'ordem_ranking')) {
-    db.run('ALTER TABLE grupos ADD COLUMN ordem_ranking INTEGER');
+  if (!isHashedPassword(adminData.senha)) {
+    adminData.senha = hashPassword(adminData.senha);
   }
+
+  rankingData = readJsonFile(RANKING_PATH, getDefaultRankingData());
+  rankingData.grupos = Array.isArray(rankingData.grupos) ? rankingData.grupos : [];
+  rankingData.nextId = Math.max(Number(rankingData.nextId) || 1, getNextId());
+
+  normalizeRankingOrder(getCurrentRankingPositions());
+  saveAdmin();
+  saveRanking();
+}
+
+function saveAdmin() {
+  writeJsonFile(ADMIN_PATH, adminData);
+}
+
+function saveRanking() {
+  writeJsonFile(RANKING_PATH, rankingData);
+}
+
+function getNextId() {
+  const maxId = rankingData && rankingData.grupos.length
+    ? Math.max(...rankingData.grupos.map(grupo => Number(grupo.id) || 0))
+    : 0;
+  return maxId + 1;
 }
 
 function getCurrentRankingPositions() {
-  const grupos = queryAll(`SELECT id FROM grupos ORDER BY ${RANKING_ORDER}`);
-  return new Map(grupos.map((grupo, index) => [grupo.id, index]));
+  return new Map(getSortedGroups().map((grupo, index) => [grupo.id, index]));
 }
 
 function normalizeRankingOrder(previousPositions = new Map()) {
-  const grupos = queryAll('SELECT id, pontuacao FROM grupos');
-  grupos.sort((a, b) => {
+  rankingData.grupos.sort((a, b) => {
     const scoreDiff = Number(b.pontuacao) - Number(a.pontuacao);
     if (scoreDiff) return scoreDiff;
 
@@ -141,9 +127,25 @@ function normalizeRankingOrder(previousPositions = new Map()) {
     return Number(a.id) - Number(b.id);
   });
 
-  grupos.forEach((grupo, index) => {
-    db.run('UPDATE grupos SET ordem_ranking = ? WHERE id = ?', [index + 1, grupo.id]);
+  rankingData.grupos.forEach((grupo, index) => {
+    grupo.ordem_ranking = index + 1;
   });
+}
+
+function getSortedGroups() {
+  return [...rankingData.grupos].sort((a, b) => {
+    const scoreDiff = Number(b.pontuacao) - Number(a.pontuacao);
+    if (scoreDiff) return scoreDiff;
+
+    const orderDiff = Number(a.ordem_ranking) - Number(b.ordem_ranking);
+    if (orderDiff) return orderDiff;
+
+    return String(a.nome).localeCompare(String(b.nome), 'pt-BR');
+  });
+}
+
+function findGroup(id) {
+  return rankingData.grupos.find(grupo => Number(grupo.id) === Number(id));
 }
 
 function getNetworkUrls() {
@@ -154,6 +156,9 @@ function getNetworkUrls() {
 }
 
 app.use(express.json());
+app.use(['/admin.txt', '/ranking.txt', '/data', '/data/*'], (req, res) => {
+  res.status(404).send('Not found');
+});
 app.use(express.static(PUBLIC_DIR));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'ranking-local-secret-key',
@@ -163,32 +168,20 @@ app.use(session({
 }));
 
 app.get('/api/turmas', (req, res) => {
-  res.json(queryAll('SELECT DISTINCT turma FROM grupos ORDER BY turma').map(t => t.turma));
+  const turmas = [...new Set(rankingData.grupos.map(grupo => grupo.turma))].sort();
+  res.json(turmas);
 });
 
 app.get('/api/ranking', (req, res) => {
   const { turma } = req.query;
-  const grupos = turma
-    ? queryAll(`SELECT * FROM grupos WHERE turma = ? ORDER BY ${RANKING_ORDER}`, [turma])
-    : queryAll(`SELECT * FROM grupos ORDER BY ${RANKING_ORDER}`);
-
+  const grupos = getSortedGroups().filter(grupo => !turma || grupo.turma === turma);
   res.json(grupos);
 });
 
-app.get('/api/grupos/:id/integrantes', (req, res) => {
-  res.json(queryAll('SELECT * FROM integrantes WHERE grupo_id = ? ORDER BY nome ASC', [req.params.id]));
-});
-
 app.post('/api/admin/login', (req, res) => {
-  const admin = queryOne('SELECT senha FROM admin WHERE id = 1');
   const senha = req.body && typeof req.body.senha === 'string' ? req.body.senha : '';
 
-  if (admin && verifyPassword(senha, admin.senha)) {
-    if (!isHashedPassword(admin.senha)) {
-      db.run('UPDATE admin SET senha = ? WHERE id = 1', [hashPassword(senha)]);
-      saveDB();
-    }
-
+  if (verifyPassword(senha, adminData.senha)) {
     req.session.admin = true;
     res.json({ ok: true });
   } else {
@@ -206,27 +199,27 @@ app.get('/api/admin/status', (req, res) => {
 });
 
 function requireAdmin(req, res, next) {
-  if (!req.session.admin) return res.status(403).json({ erro: 'Não autorizado' });
+  if (!req.session.admin) return res.status(403).json({ erro: 'Nao autorizado' });
   next();
 }
 
 app.post('/api/admin/pontuacao', requireAdmin, (req, res) => {
   const { grupo_id, alteracao } = req.body;
   if (![100, 50, 10, -10, -50, -100].includes(alteracao)) {
-    return res.status(400).json({ erro: 'Alteração inválida' });
+    return res.status(400).json({ erro: 'Alteracao invalida' });
   }
 
-  if (!queryOne('SELECT id FROM grupos WHERE id = ?', [grupo_id])) {
-    return res.status(404).json({ erro: 'Grupo não encontrado' });
+  const grupo = findGroup(grupo_id);
+  if (!grupo) {
+    return res.status(404).json({ erro: 'Grupo nao encontrado' });
   }
 
   const previousPositions = getCurrentRankingPositions();
-  db.run('UPDATE grupos SET pontuacao = max(pontuacao + ?, 0) WHERE id = ?', [alteracao, grupo_id]);
-  db.run('INSERT INTO historico (grupo_id, alteracao) VALUES (?, ?)', [grupo_id, alteracao]);
+  grupo.pontuacao = Math.max(Number(grupo.pontuacao) + Number(alteracao), 0);
   normalizeRankingOrder(previousPositions);
-  saveDB();
+  saveRanking();
 
-  res.json(queryOne('SELECT * FROM grupos WHERE id = ?', [grupo_id]));
+  res.json(grupo);
 });
 
 app.post('/api/admin/senha', requireAdmin, (req, res) => {
@@ -235,68 +228,60 @@ app.post('/api/admin/senha', requireAdmin, (req, res) => {
     return res.status(400).json({ erro: 'Senha muito curta' });
   }
 
-  db.run('UPDATE admin SET senha = ? WHERE id = 1', [hashPassword(nova_senha)]);
-  saveDB();
+  adminData.senha = hashPassword(nova_senha);
+  saveAdmin();
   res.json({ ok: true });
 });
 
 app.post('/api/admin/grupos', requireAdmin, (req, res) => {
   const { nome, turma } = req.body;
   if (!nome || !turma) {
-    return res.status(400).json({ erro: 'Nome e turma são obrigatórios' });
+    return res.status(400).json({ erro: 'Nome e turma sao obrigatorios' });
   }
 
   const nomeNormalizado = nome.trim();
   const turmaNormalizada = turma.trim();
 
   if (!nomeNormalizado.startsWith(turmaNormalizada)) {
-    return res.status(400).json({ erro: `O grupo precisa começar com ${turmaNormalizada}` });
+    return res.status(400).json({ erro: `O grupo precisa comecar com ${turmaNormalizada}` });
   }
 
-  if (queryOne('SELECT id FROM grupos WHERE nome = ? AND turma = ?', [nomeNormalizado, turmaNormalizada])) {
-    return res.status(409).json({ erro: 'Este grupo já existe nessa turma' });
+  const duplicado = rankingData.grupos.some(grupo => (
+    grupo.nome === nomeNormalizado && grupo.turma === turmaNormalizada
+  ));
+  if (duplicado) {
+    return res.status(409).json({ erro: 'Este grupo ja existe nessa turma' });
   }
 
-  const proximaOrdem = queryOne('SELECT COALESCE(MAX(ordem_ranking), 0) + 1 AS ordem FROM grupos').ordem;
-  db.run(
-    'INSERT INTO grupos (nome, turma, pontuacao, ordem_ranking) VALUES (?, ?, 0, ?)',
-    [nomeNormalizado, turmaNormalizada, proximaOrdem]
-  );
-  saveDB();
-  res.json(queryOne('SELECT * FROM grupos WHERE rowid = last_insert_rowid()'));
+  const grupo = {
+    id: rankingData.nextId || getNextId(),
+    nome: nomeNormalizado,
+    turma: turmaNormalizada,
+    pontuacao: 0,
+    ordem_ranking: rankingData.grupos.length + 1
+  };
+
+  rankingData.nextId = grupo.id + 1;
+  rankingData.grupos.push(grupo);
+  saveRanking();
+  res.json(grupo);
 });
 
 app.delete('/api/admin/grupos/:id', requireAdmin, (req, res) => {
-  db.run('DELETE FROM integrantes WHERE grupo_id = ?', [req.params.id]);
-  db.run('DELETE FROM grupos WHERE id = ?', [req.params.id]);
-  saveDB();
+  const beforeLength = rankingData.grupos.length;
+  rankingData.grupos = rankingData.grupos.filter(grupo => Number(grupo.id) !== Number(req.params.id));
+
+  if (rankingData.grupos.length === beforeLength) {
+    return res.status(404).json({ erro: 'Grupo nao encontrado' });
+  }
+
+  normalizeRankingOrder(getCurrentRankingPositions());
+  saveRanking();
   res.json({ ok: true });
 });
 
-app.post('/api/admin/integrantes', requireAdmin, (req, res) => {
-  const { grupo_id, nome } = req.body;
-  if (!grupo_id || !nome) {
-    return res.status(400).json({ erro: 'grupo_id e nome são obrigatórios' });
-  }
-
-  if (!queryOne('SELECT id FROM grupos WHERE id = ?', [grupo_id])) {
-    return res.status(404).json({ erro: 'Grupo não encontrado' });
-  }
-
-  db.run('INSERT INTO integrantes (grupo_id, nome) VALUES (?, ?)', [grupo_id, nome.trim()]);
-  saveDB();
-  res.json(queryOne('SELECT * FROM integrantes WHERE rowid = last_insert_rowid()'));
-});
-
-app.delete('/api/admin/integrantes/:id', requireAdmin, (req, res) => {
-  db.run('DELETE FROM integrantes WHERE id = ?', [req.params.id]);
-  saveDB();
-  res.json({ ok: true });
-});
-
-initDB().then(() => {
-  app.listen(PORT, HOST, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
-    getNetworkUrls().forEach(url => console.log(`Celular na mesma rede: ${url}`));
-  });
+initDataFiles();
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  getNetworkUrls().forEach(url => console.log(`Celular na mesma rede: ${url}`));
 });
