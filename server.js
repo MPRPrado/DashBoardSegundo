@@ -7,7 +7,7 @@ const path = require('path');
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_PATH = path.join(DATA_DIR, 'admin.txt');
 const RANKING_PATH = path.join(DATA_DIR, 'ranking.txt');
 const PORT = process.env.PORT || 3000;
@@ -32,7 +32,17 @@ function readJsonFile(filePath, fallback) {
 }
 
 function writeJsonFile(filePath, data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  } catch (error) {
+    if (error.code === 'EROFS') {
+      throw new Error(
+        `A pasta de dados esta somente leitura: ${DATA_DIR}. ` +
+        'Configure DATA_DIR para uma pasta gravavel ou use uma hospedagem com disco persistente.'
+      );
+    }
+    throw error;
+  }
 }
 
 function hashPassword(password) {
