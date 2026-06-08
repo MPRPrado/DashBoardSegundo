@@ -1,11 +1,11 @@
 {
-  "nextId": 7,
+  "nextId": 8,
   "grupos": [
     {
       "id": 1,
       "nome": "2201",
       "turma": "22",
-      "pontuacao": 200,
+      "pontuacao": 280,
       "ordem_ranking": 1
     },
     {
@@ -42,6 +42,13 @@
       "turma": "25",
       "pontuacao": 0,
       "ordem_ranking": 6
+    },
+    {
+      "id": 7,
+      "nome": "2208",
+      "turma": "22",
+      "pontuacao": 0,
+      "ordem_ranking": 7
     }
   ]
 }

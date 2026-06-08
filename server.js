@@ -19,22 +19,52 @@ const HASH_DIGEST = 'sha256';
 let adminData;
 let rankingData;
 
+function logProcesso(etapa, detalhes = {}) {
+  const info = Object.entries(detalhes)
+    .filter(([, valor]) => valor !== undefined && valor !== null)
+    .map(([chave, valor]) => `${chave}=${String(valor).replace(/\s+/g, ' ')}`)
+    .join(' ');
+
+  console.log(`[${new Date().toISOString()}] ${etapa}${info ? ` | ${info}` : ''}`);
+}
+
 function readJsonFile(filePath, fallback) {
-  if (!fs.existsSync(filePath)) return fallback;
+  logProcesso('arquivo:verificando', { arquivo: filePath });
+
+  if (!fs.existsSync(filePath)) {
+    logProcesso('arquivo:nao_encontrado_usando_padrao', { arquivo: filePath });
+    return fallback;
+  }
 
   try {
+    logProcesso('arquivo:lendo', { arquivo: filePath });
     const content = fs.readFileSync(filePath, 'utf8').trim();
+    logProcesso('arquivo:lido', { arquivo: filePath, bytes: content.length });
     return content ? JSON.parse(content) : fallback;
   } catch (error) {
-    console.error(`Erro ao ler ${path.basename(filePath)}:`, error.message);
+    logProcesso('arquivo:erro_leitura', {
+      arquivo: filePath,
+      codigo: error.code,
+      mensagem: error.message
+    });
     return fallback;
   }
 }
 
 function writeJsonFile(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    const content = JSON.stringify(data, null, 2);
+    logProcesso('arquivo:gravando', { arquivo: filePath, bytes: content.length });
+    fs.writeFileSync(filePath, content);
+    logProcesso('arquivo:gravado', { arquivo: filePath });
   } catch (error) {
+    logProcesso('arquivo:erro_gravacao', {
+      arquivo: filePath,
+      pasta: DATA_DIR,
+      codigo: error.code,
+      mensagem: error.message
+    });
+
     if (error.code === 'EROFS') {
       throw new Error(
         `A pasta de dados esta somente leitura: ${DATA_DIR}. ` +
@@ -87,13 +117,25 @@ function getDefaultRankingData() {
 }
 
 function initDataFiles() {
+  logProcesso('dados:iniciando', {
+    raiz: __dirname,
+    public: PUBLIC_DIR,
+    data: DATA_DIR,
+    data_env: process.env.DATA_DIR ? 'sim' : 'nao',
+    admin: ADMIN_PATH,
+    ranking: RANKING_PATH
+  });
+
+  logProcesso('dados:criando_pasta', { pasta: DATA_DIR });
   fs.mkdirSync(DATA_DIR, { recursive: true });
+  logProcesso('dados:pasta_pronta', { pasta: DATA_DIR, existe: fs.existsSync(DATA_DIR) });
 
   adminData = readJsonFile(ADMIN_PATH, {
     senha: hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin123')
   });
 
   if (!isHashedPassword(adminData.senha)) {
+    logProcesso('admin:senha_sem_hash_convertendo', { arquivo: ADMIN_PATH });
     adminData.senha = hashPassword(adminData.senha);
   }
 
@@ -104,13 +146,23 @@ function initDataFiles() {
   normalizeRankingOrder(getCurrentRankingPositions());
   saveAdmin();
   saveRanking();
+
+  logProcesso('dados:prontos', {
+    grupos: rankingData.grupos.length,
+    proximo_id: rankingData.nextId
+  });
 }
 
 function saveAdmin() {
+  logProcesso('admin:salvando', { arquivo: ADMIN_PATH });
   writeJsonFile(ADMIN_PATH, adminData);
 }
 
 function saveRanking() {
+  logProcesso('ranking:salvando', {
+    arquivo: RANKING_PATH,
+    grupos: rankingData && Array.isArray(rankingData.grupos) ? rankingData.grupos.length : 0
+  });
   writeJsonFile(RANKING_PATH, rankingData);
 }
 
@@ -166,7 +218,25 @@ function getNetworkUrls() {
 }
 
 app.use(express.json());
+app.use((req, res, next) => {
+  const inicio = Date.now();
+
+  res.on('finish', () => {
+    logProcesso('http:request', {
+      metodo: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      ms: Date.now() - inicio
+    });
+  });
+
+  next();
+});
 app.use(['/admin.txt', '/ranking.txt', '/data', '/data/*'], (req, res) => {
+  logProcesso('seguranca:bloqueio_arquivo_dados', {
+    metodo: req.method,
+    url: req.originalUrl
+  });
   res.status(404).send('Not found');
 });
 app.use(express.static(PUBLIC_DIR));
@@ -179,12 +249,14 @@ app.use(session({
 
 app.get('/api/turmas', (req, res) => {
   const turmas = [...new Set(rankingData.grupos.map(grupo => grupo.turma))].sort();
+  logProcesso('api:turmas', { total: turmas.length });
   res.json(turmas);
 });
 
 app.get('/api/ranking', (req, res) => {
   const { turma } = req.query;
   const grupos = getSortedGroups().filter(grupo => !turma || grupo.turma === turma);
+  logProcesso('api:ranking', { turma: turma || 'todas', total: grupos.length });
   res.json(grupos);
 });
 
@@ -193,41 +265,59 @@ app.post('/api/admin/login', (req, res) => {
 
   if (verifyPassword(senha, adminData.senha)) {
     req.session.admin = true;
+    logProcesso('admin:login_sucesso');
     res.json({ ok: true });
   } else {
+    logProcesso('admin:login_falha');
     res.status(401).json({ erro: 'Senha incorreta' });
   }
 });
 
 app.post('/api/admin/logout', (req, res) => {
+  logProcesso('admin:logout');
   req.session.destroy();
   res.json({ ok: true });
 });
 
 app.get('/api/admin/status', (req, res) => {
+  logProcesso('admin:status', { logado: !!req.session.admin });
   res.json({ logado: !!req.session.admin });
 });
 
 function requireAdmin(req, res, next) {
-  if (!req.session.admin) return res.status(403).json({ erro: 'Nao autorizado' });
+  if (!req.session.admin) {
+    logProcesso('admin:acesso_negado', { metodo: req.method, url: req.originalUrl });
+    return res.status(403).json({ erro: 'Nao autorizado' });
+  }
+
   next();
 }
 
 app.post('/api/admin/pontuacao', requireAdmin, (req, res) => {
   const { grupo_id, alteracao } = req.body;
   if (![100, 50, 10, -10, -50, -100].includes(alteracao)) {
+    logProcesso('pontuacao:alteracao_invalida', { grupo_id, alteracao });
     return res.status(400).json({ erro: 'Alteracao invalida' });
   }
 
   const grupo = findGroup(grupo_id);
   if (!grupo) {
+    logProcesso('pontuacao:grupo_nao_encontrado', { grupo_id, alteracao });
     return res.status(404).json({ erro: 'Grupo nao encontrado' });
   }
 
   const previousPositions = getCurrentRankingPositions();
+  const pontuacaoAnterior = Number(grupo.pontuacao);
   grupo.pontuacao = Math.max(Number(grupo.pontuacao) + Number(alteracao), 0);
   normalizeRankingOrder(previousPositions);
   saveRanking();
+  logProcesso('pontuacao:alterada', {
+    grupo_id: grupo.id,
+    grupo: grupo.nome,
+    alteracao,
+    antes: pontuacaoAnterior,
+    depois: grupo.pontuacao
+  });
 
   res.json(grupo);
 });
@@ -235,17 +325,20 @@ app.post('/api/admin/pontuacao', requireAdmin, (req, res) => {
 app.post('/api/admin/senha', requireAdmin, (req, res) => {
   const { nova_senha } = req.body;
   if (!nova_senha || nova_senha.length < 4) {
+    logProcesso('admin:senha_rejeitada', { motivo: 'muito_curta' });
     return res.status(400).json({ erro: 'Senha muito curta' });
   }
 
   adminData.senha = hashPassword(nova_senha);
   saveAdmin();
+  logProcesso('admin:senha_alterada');
   res.json({ ok: true });
 });
 
 app.post('/api/admin/grupos', requireAdmin, (req, res) => {
   const { nome, turma } = req.body;
   if (!nome || !turma) {
+    logProcesso('grupo:criacao_rejeitada', { motivo: 'nome_ou_turma_vazio' });
     return res.status(400).json({ erro: 'Nome e turma sao obrigatorios' });
   }
 
@@ -253,6 +346,11 @@ app.post('/api/admin/grupos', requireAdmin, (req, res) => {
   const turmaNormalizada = turma.trim();
 
   if (!nomeNormalizado.startsWith(turmaNormalizada)) {
+    logProcesso('grupo:criacao_rejeitada', {
+      motivo: 'turma_incompativel',
+      nome: nomeNormalizado,
+      turma: turmaNormalizada
+    });
     return res.status(400).json({ erro: `O grupo precisa comecar com ${turmaNormalizada}` });
   }
 
@@ -260,6 +358,11 @@ app.post('/api/admin/grupos', requireAdmin, (req, res) => {
     grupo.nome === nomeNormalizado && grupo.turma === turmaNormalizada
   ));
   if (duplicado) {
+    logProcesso('grupo:criacao_rejeitada', {
+      motivo: 'duplicado',
+      nome: nomeNormalizado,
+      turma: turmaNormalizada
+    });
     return res.status(409).json({ erro: 'Este grupo ja existe nessa turma' });
   }
 
@@ -274,24 +377,63 @@ app.post('/api/admin/grupos', requireAdmin, (req, res) => {
   rankingData.nextId = grupo.id + 1;
   rankingData.grupos.push(grupo);
   saveRanking();
+  logProcesso('grupo:criado', {
+    id: grupo.id,
+    nome: grupo.nome,
+    turma: grupo.turma
+  });
   res.json(grupo);
 });
 
 app.delete('/api/admin/grupos/:id', requireAdmin, (req, res) => {
   const beforeLength = rankingData.grupos.length;
+  const grupoRemovido = findGroup(req.params.id);
   rankingData.grupos = rankingData.grupos.filter(grupo => Number(grupo.id) !== Number(req.params.id));
 
   if (rankingData.grupos.length === beforeLength) {
+    logProcesso('grupo:exclusao_rejeitada', { id: req.params.id, motivo: 'nao_encontrado' });
     return res.status(404).json({ erro: 'Grupo nao encontrado' });
   }
 
   normalizeRankingOrder(getCurrentRankingPositions());
   saveRanking();
+  logProcesso('grupo:excluido', {
+    id: req.params.id,
+    nome: grupoRemovido ? grupoRemovido.nome : undefined
+  });
   res.json({ ok: true });
 });
 
-initDataFiles();
-app.listen(PORT, HOST, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
-  getNetworkUrls().forEach(url => console.log(`Celular na mesma rede: ${url}`));
+app.use((error, req, res, next) => {
+  logProcesso('http:erro_interno', {
+    metodo: req.method,
+    url: req.originalUrl,
+    mensagem: error.message
+  });
+  res.status(500).json({ erro: 'Erro interno no servidor' });
 });
+
+try {
+  logProcesso('servidor:iniciando', { porta: PORT, host: HOST });
+  initDataFiles();
+  const server = app.listen(PORT, HOST, () => {
+    logProcesso('servidor:rodando', { url: `http://localhost:${PORT}` });
+    getNetworkUrls().forEach(url => logProcesso('servidor:url_celular', { url }));
+  });
+
+  server.on('error', error => {
+    logProcesso('servidor:erro_listen', {
+      porta: PORT,
+      host: HOST,
+      codigo: error.code,
+      mensagem: error.message
+    });
+  });
+} catch (error) {
+  logProcesso('servidor:falha_inicio', {
+    mensagem: error.message,
+    codigo: error.code,
+    stack: error.stack
+  });
+  throw error;
+}
