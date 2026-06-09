@@ -74,10 +74,21 @@
       </div>
     </div>
   </div>
+  <div class="app-version" id="app-version">Verificando versao...</div>
 
   <script>
     let turmaPts = null;
     let turmaEq = null;
+
+    async function carregarVersao() {
+      try {
+        const resposta = await fetch(`/api/version?t=${Date.now()}`, { cache: 'no-store' });
+        const info = await resposta.json();
+        document.getElementById('app-version').textContent = `v${info.version} | build ${info.build}`;
+      } catch {
+        document.getElementById('app-version').textContent = 'Versao indisponivel';
+      }
+    }
     let ultimaTurmaGrupo = '22';
 
     function escapeHtml(value) {
@@ -364,6 +375,7 @@
       }
     }
 
+    carregarVersao();
     prepararCampoGrupo();
     verificarSessao();
   </script>

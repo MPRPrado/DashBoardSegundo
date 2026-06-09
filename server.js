@@ -4,28 +4,300 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const packageInfo = require('./package.json');
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_PATH = path.join(DATA_DIR, 'admin.txt');
 const RANKING_PATH = path.join(DATA_DIR, 'ranking.txt');
+const LOG_PATH = process.env.LOG_FILE || path.join(__dirname, 'server.log');
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
+const APP_VERSION = process.env.APP_VERSION || packageInfo.version;
+const BUILD_VERSION = process.env.APP_BUILD ||
+  (process.env.VERCEL_GIT_COMMIT_SHA && process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)) ||
+  getBuildVersion(getLatestBuildDate());
 const HASH_ITERATIONS = 120000;
 const HASH_KEYLEN = 32;
 const HASH_DIGEST = 'sha256';
 
 let adminData;
 let rankingData;
+let logFileWarningShown = false;
+
+const LOG_EVENTOS = {
+  'arquivo:verificando': { gravar: false },
+  'arquivo:lendo': { gravar: false },
+  'arquivo:lido': { gravar: false },
+  'arquivo:gravando': { gravar: false },
+  'arquivo:gravado': { gravar: false },
+  'arquivo:nao_encontrado_usando_padrao': {
+    nivel: 'AVISO',
+    area: 'ARQUIVO',
+    texto: 'Arquivo nao existe, usando dados padrao'
+  },
+  'arquivo:erro_leitura': {
+    nivel: 'ERRO',
+    area: 'ARQUIVO',
+    texto: 'Falha ao ler arquivo'
+  },
+  'arquivo:erro_gravacao': {
+    nivel: 'ERRO',
+    area: 'ARQUIVO',
+    texto: 'Falha ao gravar arquivo'
+  },
+  'dados:iniciando': {
+    nivel: 'INFO',
+    area: 'DADOS',
+    texto: 'Configuracao dos caminhos'
+  },
+  'dados:criando_pasta': {
+    nivel: 'INFO',
+    area: 'DADOS',
+    texto: 'Preparando pasta de dados'
+  },
+  'dados:pasta_pronta': {
+    nivel: 'OK',
+    area: 'DADOS',
+    texto: 'Pasta de dados pronta'
+  },
+  'dados:prontos': {
+    nivel: 'OK',
+    area: 'DADOS',
+    texto: 'Dados carregados'
+  },
+  'admin:salvando': {
+    nivel: 'INFO',
+    area: 'ADMIN',
+    texto: 'Salvando arquivo do admin'
+  },
+  'admin:senha_sem_hash_convertendo': {
+    nivel: 'AVISO',
+    area: 'ADMIN',
+    texto: 'Senha antiga sem hash encontrada, convertendo'
+  },
+  'admin:login_sucesso': {
+    nivel: 'OK',
+    area: 'ADMIN',
+    texto: 'Login realizado'
+  },
+  'admin:login_falha': {
+    nivel: 'AVISO',
+    area: 'ADMIN',
+    texto: 'Tentativa de login com senha incorreta'
+  },
+  'admin:logout': {
+    nivel: 'INFO',
+    area: 'ADMIN',
+    texto: 'Logout realizado'
+  },
+  'admin:status': { gravar: false },
+  'admin:acesso_negado': {
+    nivel: 'AVISO',
+    area: 'ADMIN',
+    texto: 'Acesso negado'
+  },
+  'admin:senha_rejeitada': {
+    nivel: 'AVISO',
+    area: 'ADMIN',
+    texto: 'Nova senha rejeitada'
+  },
+  'admin:senha_alterada': {
+    nivel: 'OK',
+    area: 'ADMIN',
+    texto: 'Senha alterada'
+  },
+  'ranking:salvando': {
+    nivel: 'INFO',
+    area: 'RANKING',
+    texto: 'Salvando ranking'
+  },
+  'api:turmas': { gravar: false },
+  'api:ranking': { gravar: false },
+  'http:request': {
+    nivel: 'HTTP',
+    area: 'REQUEST',
+    texto: 'Requisicao finalizada'
+  },
+  'http:erro_interno': {
+    nivel: 'ERRO',
+    area: 'REQUEST',
+    texto: 'Erro interno em uma rota'
+  },
+  'seguranca:bloqueio_arquivo_dados': {
+    nivel: 'AVISO',
+    area: 'SEGURANCA',
+    texto: 'Tentativa de acessar arquivo de dados bloqueada'
+  },
+  'pontuacao:alteracao_invalida': {
+    nivel: 'AVISO',
+    area: 'PONTOS',
+    texto: 'Alteracao de pontos invalida'
+  },
+  'pontuacao:grupo_nao_encontrado': {
+    nivel: 'AVISO',
+    area: 'PONTOS',
+    texto: 'Grupo nao encontrado ao alterar pontos'
+  },
+  'pontuacao:alterada': {
+    nivel: 'OK',
+    area: 'PONTOS',
+    texto: 'Pontuacao alterada'
+  },
+  'grupo:criacao_rejeitada': {
+    nivel: 'AVISO',
+    area: 'GRUPO',
+    texto: 'Criacao de grupo rejeitada'
+  },
+  'grupo:criado': {
+    nivel: 'OK',
+    area: 'GRUPO',
+    texto: 'Grupo criado'
+  },
+  'grupo:exclusao_rejeitada': {
+    nivel: 'AVISO',
+    area: 'GRUPO',
+    texto: 'Exclusao de grupo rejeitada'
+  },
+  'grupo:excluido': {
+    nivel: 'OK',
+    area: 'GRUPO',
+    texto: 'Grupo excluido'
+  },
+  'servidor:iniciando': {
+    nivel: 'INFO',
+    area: 'SERVIDOR',
+    texto: 'Iniciando servidor'
+  },
+  'servidor:rodando': {
+    nivel: 'OK',
+    area: 'SERVIDOR',
+    texto: 'Servidor rodando'
+  },
+  'servidor:url_celular': {
+    nivel: 'INFO',
+    area: 'SERVIDOR',
+    texto: 'URL para celular na mesma rede'
+  },
+  'servidor:erro_listen': {
+    nivel: 'ERRO',
+    area: 'SERVIDOR',
+    texto: 'Falha ao abrir porta do servidor'
+  },
+  'servidor:falha_inicio': {
+    nivel: 'ERRO',
+    area: 'SERVIDOR',
+    texto: 'Falha ao iniciar servidor'
+  },
+  'log:arquivo_criado': {
+    nivel: 'OK',
+    area: 'LOG',
+    texto: 'Arquivo de log criado'
+  }
+};
 
 function logProcesso(etapa, detalhes = {}) {
+  const evento = LOG_EVENTOS[etapa] || {
+    nivel: 'INFO',
+    area: 'GERAL',
+    texto: etapa
+  };
+
+  if (evento.gravar === false) return;
+
+  if (
+    etapa === 'http:request' &&
+    detalhes.status < 400 &&
+    detalhes.metodo === 'GET'
+  ) {
+    return;
+  }
+
+  const data = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'medium'
+  }).format(new Date());
+
   const info = Object.entries(detalhes)
     .filter(([, valor]) => valor !== undefined && valor !== null)
-    .map(([chave, valor]) => `${chave}=${String(valor).replace(/\s+/g, ' ')}`)
+    .map(([chave, valor]) => `${chave}=${formatLogValue(valor)}`)
     .join(' ');
+  const linha = `[${data}] ${evento.nivel} ${evento.area}: ${evento.texto}${info ? ` | ${info}` : ''}`;
 
-  console.log(`[${new Date().toISOString()}] ${etapa}${info ? ` | ${info}` : ''}`);
+  console.log(linha);
+  salvarLogEmArquivo(linha);
+}
+
+function formatLogValue(value) {
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return `"${String(value).replace(/\s+/g, ' ')}"`;
+}
+
+function salvarLogEmArquivo(linha) {
+  try {
+    fs.appendFileSync(LOG_PATH, `${linha}${os.EOL}`, 'utf8');
+  } catch (error) {
+    if (!logFileWarningShown) {
+      logFileWarningShown = true;
+      console.warn(
+        `[LOG] Nao foi possivel gravar em ${LOG_PATH}. ` +
+        `O console continua funcionando. Erro: ${error.message}`
+      );
+    }
+  }
+}
+
+function prepararArquivoLog() {
+  try {
+    const logDir = path.dirname(LOG_PATH);
+    fs.mkdirSync(logDir, { recursive: true });
+
+    if (!fs.existsSync(LOG_PATH)) {
+      fs.writeFileSync(LOG_PATH, '', 'utf8');
+      return true;
+    }
+  } catch (error) {
+    if (!logFileWarningShown) {
+      logFileWarningShown = true;
+      console.warn(
+        `[LOG] Nao foi possivel criar ${LOG_PATH}. ` +
+        `O console continua funcionando. Erro: ${error.message}`
+      );
+    }
+  }
+
+  return false;
+}
+
+function getBuildVersion(date) {
+  const pad = value => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    '-',
+    pad(date.getHours()),
+    pad(date.getMinutes())
+  ].join('');
+}
+
+function getLatestBuildDate() {
+  const buildFiles = [
+    __filename,
+    path.join(__dirname, 'package.json'),
+    path.join(PUBLIC_DIR, 'index.html'),
+    path.join(PUBLIC_DIR, 'superadminana.html'),
+    path.join(PUBLIC_DIR, 'styles.css')
+  ];
+
+  const latestModified = Math.max(
+    ...buildFiles
+      .filter(filePath => fs.existsSync(filePath))
+      .map(filePath => fs.statSync(filePath).mtimeMs)
+  );
+
+  return new Date(latestModified);
 }
 
 function readJsonFile(filePath, fallback) {
@@ -219,6 +491,14 @@ function getNetworkUrls() {
 
 app.use(express.json());
 app.use((req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0'
+  });
+  next();
+});
+app.use((req, res, next) => {
   const inicio = Date.now();
 
   res.on('finish', () => {
@@ -239,13 +519,23 @@ app.use(['/admin.txt', '/ranking.txt', '/data', '/data/*'], (req, res) => {
   });
   res.status(404).send('Not found');
 });
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, {
+  etag: false,
+  lastModified: false
+}));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'ranking-local-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 3600000, sameSite: 'lax' }
 }));
+
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: APP_VERSION,
+    build: BUILD_VERSION
+  });
+});
 
 app.get('/api/turmas', (req, res) => {
   const turmas = [...new Set(rankingData.grupos.map(grupo => grupo.turma))].sort();
@@ -414,7 +704,14 @@ app.use((error, req, res, next) => {
 });
 
 try {
-  logProcesso('servidor:iniciando', { porta: PORT, host: HOST });
+  const logCriado = prepararArquivoLog();
+  if (logCriado) logProcesso('log:arquivo_criado', { arquivo: LOG_PATH });
+  logProcesso('servidor:iniciando', {
+    porta: PORT,
+    host: HOST,
+    versao: APP_VERSION,
+    build: BUILD_VERSION
+  });
   initDataFiles();
   const server = app.listen(PORT, HOST, () => {
     logProcesso('servidor:rodando', { url: `http://localhost:${PORT}` });

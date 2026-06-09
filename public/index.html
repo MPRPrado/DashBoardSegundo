@@ -13,9 +13,20 @@
 
   <div class="filtros" id="filtros"></div>
   <main class="container" id="ranking"></main>
+  <div class="app-version" id="app-version">Verificando versao...</div>
 
   <script>
     let turmaSelecionada = null;
+
+    async function carregarVersao() {
+      try {
+        const resposta = await fetch(`/api/version?t=${Date.now()}`, { cache: 'no-store' });
+        const info = await resposta.json();
+        document.getElementById('app-version').textContent = `v${info.version} | build ${info.build}`;
+      } catch {
+        document.getElementById('app-version').textContent = 'Versao indisponivel';
+      }
+    }
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, char => ({
@@ -116,6 +127,7 @@
       carregarRanking();
     }
 
+    carregarVersao();
     carregarTurmas();
     carregarRanking();
     setInterval(carregarRanking, 5000);
