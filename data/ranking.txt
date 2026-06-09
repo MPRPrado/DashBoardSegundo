@@ -5,7 +5,7 @@
       "id": 1,
       "nome": "2201",
       "turma": "22",
-      "pontuacao": 280,
+      "pontuacao": 480,
       "ordem_ranking": 1
     },
     {

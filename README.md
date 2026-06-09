@@ -1,125 +1,152 @@
-# Dashboard Ranking
+# Dashboard Ranking em PHP
 
-Sistema local para gerenciar e exibir um ranking de grupos por turma.
+Sistema de ranking de grupos feito para hospedagem compartilhada com PHP, como
+os planos da Hostinger que nao possuem Node.js.
 
 ## Funcionalidades
 
 - Ranking publico com destaque para o TOP 3.
 - Filtro por turma.
-- Painel administrativo com login.
+- Painel administrativo com login e sessao PHP.
 - Cadastro e exclusao de grupos.
-- Alteracao de pontuacao com botoes `+100`, `+50`, `+10`, `-10`, `-50` e `-100`.
+- Alteracao de pontuacao com `+100`, `+50`, `+10`, `-10`, `-50` e `-100`.
 - Pontuacao minima travada em `0`.
 - Bloqueio de grupos duplicados na mesma turma.
 - Desempate mantendo na frente quem ja estava na frente antes.
-- Acesso pelo celular na mesma rede do computador.
+- Dados salvos em arquivos `.txt`.
+- Log filtrado salvo em `server.log`.
+- Versao e build visiveis no canto da pagina.
 
-## Como Rodar
+## Requisitos
 
-Instale as dependencias:
+- PHP 8.0 ou superior.
+- Apache ou LiteSpeed com `mod_rewrite`.
+- Permissao de escrita na pasta `data`.
+
+Nao precisa executar `npm install` ou `npm start`.
+
+## Testar Localmente no Windows
+
+Instale o XAMPP, que ja inclui PHP. Depois, dentro da pasta do projeto, rode:
 
 ```powershell
-npm install
+C:\xampp\php\php.exe -S localhost:8000 router.php
 ```
 
-Inicie o servidor:
+Depois da instalacao, tambem e possivel iniciar dando dois cliques em:
+
+```txt
+iniciar.bat
+```
+
+Abra:
+
+```txt
+http://localhost:8000
+http://localhost:8000/superadminana.html
+http://localhost:8000/api/version
+```
+
+Para conferir a sintaxe do backend:
 
 ```powershell
-npm start
+C:\xampp\php\php.exe -l api.php
+C:\xampp\php\php.exe -l router.php
 ```
 
-Abra no navegador:
+O `router.php` e usado somente no teste local. A Hostinger usa o `.htaccess`.
+
+## Publicar na Hostinger
+
+Envie o conteudo deste projeto para a pasta `public_html`:
 
 ```txt
-http://localhost:3000
+.htaccess
+api.php
+public/
+data/
 ```
 
-## Area Admin
+No Gerenciador de Arquivos da Hostinger:
 
-Acesse diretamente pela URL:
+1. Confirme que `.htaccess` foi enviado. Arquivos iniciados com ponto podem
+   ficar ocultos.
+2. Deixe a pasta `data` com permissao de escrita. Normalmente `755` funciona;
+   se o PHP nao conseguir salvar, teste `775`.
+3. Se `data/admin.txt` nao existir, o PHP cria o arquivo automaticamente com a
+   senha inicial `admin123`.
+4. Entre no painel e altere a senha inicial.
+
+O ranking publico fica em:
 
 ```txt
-http://localhost:3000/superadminana.html
+https://seu-dominio.com/
 ```
 
-Senha inicial quando `data/admin.txt` nao existe:
+O painel administrativo fica em:
 
 ```txt
-admin123
+https://seu-dominio.com/superadminana.html
 ```
 
-Depois de entrar, use a opcao **Alterar Senha**. A senha e salva com hash em `data/admin.txt`.
+Para conferir qual versao realmente esta publicada:
+
+```txt
+https://seu-dominio.com/api/version
+```
 
 ## Arquivos de Dados
-
-O projeto nao usa mais SQLite. Os dados ficam em arquivos `.txt`:
 
 ```txt
 data/admin.txt
 data/ranking.txt
 ```
 
-`data/admin.txt` guarda a senha do painel administrativo.
+- `admin.txt` guarda somente o hash da senha.
+- `ranking.txt` guarda grupos, pontos e ordem do ranking.
+- `data/.htaccess` bloqueia acesso direto aos arquivos pelo navegador.
 
-`data/ranking.txt` guarda grupos, turmas, pontuacao e ordem do ranking.
+Tudo que for alterado no computador ou celular pelo site hospedado sera salvo
+nesses arquivos do servidor.
 
-Esses arquivos ficam fora da pasta `public`, entao nao sao servidos como arquivos estaticos pelo navegador.
+## Logs
 
-Tudo que for criado pelo computador ou pelo celular e salvo nesses arquivos locais, porque o celular acessa o servidor rodando no computador.
-
-## Acesso Pelo Celular
-
-Ao iniciar o servidor, o terminal mostra enderecos parecidos com:
+Os eventos importantes e erros ficam em:
 
 ```txt
-Celular na mesma rede: http://10.0.0.40:3000
+server.log
 ```
 
-Abra esse endereco no navegador do celular. O celular precisa estar na mesma rede do computador.
+O arquivo e criado automaticamente. Se algo nao salvar, procure linhas com
+`ERRO ARQUIVO` ou `ERRO SERVIDOR`.
 
-Se nao abrir, verifique se o Firewall do Windows permitiu o Node.js na rede privada.
+O `.htaccess` bloqueia o acesso ao log pelo navegador.
 
-## Variaveis Opcionais
+## Senha Existente
 
-Voce pode mudar a porta:
-
-```powershell
-$env:PORT="3001"
-npm start
-```
-
-Voce pode definir uma senha inicial quando `data/admin.txt` ainda nao existe:
-
-```powershell
-$env:ADMIN_INITIAL_PASSWORD="suaSenha"
-npm start
-```
-
-Voce tambem pode definir o segredo da sessao:
-
-```powershell
-$env:SESSION_SECRET="um-segredo-local"
-npm start
-```
+O backend PHP aceita o hash PBKDF2 criado pela versao antiga em Node.js. Ao
+alterar a senha pelo painel, ela passa a usar o hash seguro nativo do PHP.
 
 ## Estrutura
 
 ```txt
 data/
+  .htaccess
   admin.txt
   ranking.txt
 public/
   index.html
   superadminana.html
   styles.css
-server.js
-package.json
+.htaccess
+api.php
+iniciar.bat
+router.php
+README.md
 ```
 
-## Observacoes
+Os arquivos `server.js`, `package.json` e `package-lock.json` nao sao mais
+necessarios.
 
-- O projeto foi pensado para uso local ou servidor simples com Node.js.
-- `node_modules/` nao deve ser enviado para o GitHub.
-- `server.log` nao deve ser enviado para o GitHub.
-- `ranking.db` nao e mais usado.
-- Para parar o servidor, pressione `Ctrl + C` no terminal onde o `npm start` esta rodando.
+O `router.php` pode ficar no projeto, mas serve apenas para executar o teste
+local com o servidor embutido do PHP.

@@ -1,0 +1,21 @@
+Options -Indexes
+
+RewriteEngine On
+
+# Bloqueia arquivos privados mesmo se a hospedagem ignorar regras internas.
+RewriteRule ^(?:data|server\.log)(?:/|$) - [F,L,NC]
+
+# Mantem as mesmas URLs usadas pelo frontend.
+RewriteRule ^api(?:/(.*))?$ api.php?route=$1 [QSA,L]
+RewriteRule ^$ public/index.html [L]
+RewriteRule ^(index\.html|superadminana\.html|styles\.css)$ public/$1 [L,NC]
+
+<IfModule mod_headers.c>
+  Header always set Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"
+  Header always set Pragma "no-cache"
+  Header always set Expires "0"
+</IfModule>
+
+<FilesMatch "^(?:server\.log|package(?:-lock)?\.json|README\.md)$">
+  Require all denied
+</FilesMatch>
