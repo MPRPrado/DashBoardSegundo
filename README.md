@@ -150,3 +150,16 @@ necessarios.
 
 O `router.php` pode ficar no projeto, mas serve apenas para executar o teste
 local com o servidor embutido do PHP.
+
+## Testar no Render
+
+O Render nao possui runtime PHP nativo. Para testar nele, crie um novo
+**Web Service** usando a opcao **Docker**. O `Dockerfile` deste projeto instala
+PHP 8.2 com Apache automaticamente.
+
+Nao configure `npm install`, Build Command ou Start Command. O Docker cuida
+dessas etapas.
+
+No plano gratuito do Render, alteracoes feitas em `ranking.txt` e `admin.txt`
+podem ser perdidas quando o servico reiniciar ou receber um novo deploy. Na
+Hostinger com armazenamento persistente, os arquivos permanecem salvos.

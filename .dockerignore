@@ -1,0 +1,7 @@
+.git
+.gitignore
+node_modules
+server.log
+data/admin.txt
+iniciar.bat
+README.md
